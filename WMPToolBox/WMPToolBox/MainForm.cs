@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using WMPLib;
 using System.Xml;
+using System.Diagnostics;
 
 namespace WMPToolBox
 {
@@ -48,19 +49,16 @@ namespace WMPToolBox
     {
         private WMPLib.WindowsMediaPlayer m_player;
         private IWMPMediaCollection m_media;
-        private IWMPStringCollection m_albums;
-        private IWMPStringCollection m_artists;
+        private IWMPMedia m_mediaItem;
 
         public bool init()
         {
             m_player = new WMPLib.WindowsMediaPlayer();
             IWMPSettings2 settings = (IWMPSettings2)m_player.settings;
-            bool b = settings.requestMediaAccessRights("read");
+            bool b = settings.requestMediaAccessRights("full");
             if (!b)
                 return b;
             m_media = m_player.mediaCollection;
-            m_artists = m_media.getAttributeStringCollection("WM/AlbumArtist", "Audio");
-            m_albums = m_media.getAttributeStringCollection("WM/AlbumTitle", "Audio");
             return true;
         }
 
@@ -85,11 +83,9 @@ namespace WMPToolBox
                 int attCount = mediaItem.attributeCount;
                 for (int j = 0; j < attCount; ++j)
                 {
-                    string attrName = mediaItem.getAttributeName(j);
-                    writer.WriteStartElement(attrName);
+                    string attrName = mediaItem.getAttributeName(j).Replace('/', '-');
                     string attrValue = mediaItem.getItemInfo(attrName);
-                    writer.WriteAttributeString("value", attrValue);
-                    writer.WriteEndElement();
+                    writer.WriteElementString(attrName, attrValue);
                 }
 
                 writer.WriteEndElement();
@@ -101,11 +97,51 @@ namespace WMPToolBox
         public void restore(string path)
         {
             XmlTextReader reader = new XmlTextReader(path);
+            string url;
+            string attrName = "";
+            string restoreLibPath = "C:\\Users\\Michael\\Music";
+            string backupLibPath = "H:\\My Music";
             while (reader.Read())
             {
                 if (reader.NodeType == XmlNodeType.Element)
                 {
+                    if (reader.Name == "library")
+                        continue;
+                    if (reader.Name == "MediaItem")
+                    {
+                        if (reader.HasAttributes)
+                        {
+                            reader.MoveToNextAttribute();
+                            url = reader.Value;
+                            reader.MoveToElement();
+                            string searchUrl = url.Replace(backupLibPath, restoreLibPath);
+                            Trace.WriteLine(searchUrl);
+                            IWMPPlaylist pl = m_media.getByAttribute("SourceURL", searchUrl);
+                            if(pl.count == 1)
+                                m_mediaItem = pl.get_Item(0);
+                            else
+                                m_mediaItem = null;
+                        }
+                        else
+                        {
+                        }
+                    }
+                    else
+                    {
+                        attrName = reader.Name.Replace('-', '/');
+                    }
 
+                }
+                else if (m_mediaItem != null && reader.NodeType == XmlNodeType.Text)
+                {
+                    try
+                    {
+                        Trace.WriteLine(attrName + " = " + reader.Value);
+                        m_mediaItem.setItemInfo(attrName, reader.Value);
+                    }
+                    catch (UnauthorizedAccessException e)
+                    {
+                    }
                 }
             }
         }
